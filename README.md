@@ -1,105 +1,158 @@
-# Atividade: Detetive de APIs
-**Disciplina:** Serviços Web 
+# API de Livros — Detetive de APIs + Autenticação JWT
+
+**Disciplina:** Serviços Web — IFSul Campus Passo Fundo
 **Professor:** Élder F. F. Bernardi
-**Duração estimada:** 6 horas
+**Aluno:** Marco
+
+Fork da atividade [Detetive de APIs](https://github.com/elderbernardiifsul/ws-atividade-apiRestComProblemas). Este repositório contém duas entregas:
+
+1. **Correção dos 7 erros estruturais** de REST e da arquitetura RCS da API original.
+2. **Autenticação JWT**, com login, rotas protegidas e logout com blacklist de tokens.
+
 ---
 
-## Contexto
+## Como executar
 
-Você foi contratado como **auditor técnico** por uma startup que está prestes a lançar sua API de catálogo de livros. A equipe de desenvolvimento entregou o código e garantiu que "está funcionando". De fato, a aplicação inicia sem erros, aceita requisições e retorna respostas. Porém, o arquiteto da empresa — que estudou REST e a arquitetura RCS (Router–Controller–Service) — desconfia que o time cometeu erros que violam princípios fundamentais da arquitetura.
+```bash
+npm install
+cp .env.example .env   # defina um JWT_SECRET aleatório
+npm start
+```
 
-A API foi construída seguindo (ou tentando seguir) o padrão **Router–Controller–Service (RCS) com DAO**, conforme o material de Modelagem de Serviços REST. A estrutura do projeto é:
+A API sobe em `http://localhost:3000`.
+
+| Variável | Uso | Exemplo |
+|---|---|---|
+| `JWT_SECRET` | Chave que assina e verifica os tokens | uma string longa e aleatória |
+| `JWT_EXPIRES_IN` | Validade do token, **com unidade** | `30m`, `1h` |
+
+> Sem unidade, o valor é lido em milissegundos: `JWT_EXPIRES_IN=30` gera um token que já nasce expirado.
+
+---
+
+## Estrutura
 
 ```
-├── app.js                          ← Ponto de entrada
+├── app.js                          ← Ponto de entrada: dotenv, montagem das rotas
 ├── routes/
-│   └── livroRoutes.js              ← Mapeamento de rotas
+│   ├── livroRoutes.js              ← Rotas de livros (todas protegidas)
+│   └── usuarioRoutes.js            ← Login e logout
+├── middlewares/
+│   ├── authMiddleware.js           ← Verificação do JWT e da blacklist
+│   └── errorHandler.js             ← Tratamento centralizado de erros
 ├── controllers/
-│   └── livroController.js          ← Orquestração req/res
+│   ├── livroController.js          ← Orquestração req/res de livros
+│   └── usuarioController.js        ← Orquestração req/res de login/logout
 ├── services/
-│   └── livroService.js             ← Lógica de negócio
-├── dao/
-│   └── livroDAO.js                 ← Acesso a dados (memória)
-└── middlewares/
-    └── errorHandler.js             ← Tratamento centralizado de erros
+│   ├── livroService.js             ← Regras de negócio de livros
+│   └── usuarioService.js           ← bcrypt, emissão de token, blacklist
+└── dao/
+    ├── livroDAO.js                 ← Dados de livros (memória)
+    └── usuarioDAO.js               ← Dados de usuários (memória, senhas em hash)
 ```
 
-Sua missão: **encontrar, diagnosticar e corrigir** os problemas estruturais distribuídos pelas camadas da API, comprovando que você domina os conceitos estudados nos materiais de referência.
+---
+
+## Parte 1 — Os 7 erros corrigidos
+
+Cada correção está marcada no código com um comentário `ERRO N` / `CORREÇÃO`.
+
+| # | Camada | Era | Ficou | Princípio violado |
+|---|---|---|---|---|
+| 1 | Routes | `GET /livros/getLivros` | `GET /livros` | A URL identifica o **recurso**, não a ação. O verbo é o método HTTP. |
+| 2 | Routes | `GET /livros/novo` para criar | `POST /livros` | `GET` é só leitura. Criar um recurso é `POST`. |
+| 3 | Routes + Controller | `PUT /livros` com o id no body | `PUT /livros/:id` | O recurso a ser alterado é identificado na URL, não no corpo. |
+| 4 | Routes | `DELETE /livros` apagava **todos** os livros | `DELETE /livros/:id` | `DELETE` remove um recurso específico. |
+| 5 | Controller | Controller importava o DAO e chamava `limparTudo()` | Controller chama `livroService.remover(id)` | Na arquitetura RCS, o Controller **nunca** acessa o DAO, sempre passa pelo Service. |
+| 6 | Controller | Livro inexistente retornava `200` com `{}` | `404 Not Found` com mensagem em JSON | O status code deve refletir o resultado. Recurso inexistente é `404`. |
+| 7 | Controller | Criação retornava `200` | `201 Created` | Criação bem-sucedida é `201`. |
+| + | Controller | `/livros/:id/resumo` respondia texto plano | Resposta em JSON | A representação dos recursos na API é JSON. |
+
+Além disso, a remoção passou a responder `204 No Content` no sucesso e `404` quando o id não existe.
 
 ---
 
-## Leitura Obrigatória (antes de iniciar)
+## Parte 2 — Autenticação JWT
 
-> **Material 1:** "Criando a primeira API REST"
-> **Material 2:** "Modelagem e Programação de Serviços REST com Express.js"
->
-> Estes materiais são pré-requisito e estão no material de apoio da disciplina. Os erros da API estão distribuídos pelas camadas (Routes, Controller, Service, DAO) e só podem ser identificados com domínio dos conceitos de ambos os materiais. Sem a leitura, a atividade não pode ser concluída.
+### Fluxo de uma requisição
 
----
+```
+Requisição → Router → authMiddleware → Controller → Service → DAO
+                          │
+                          ├─ sem token ............ 401
+                          ├─ token na blacklist ... 401
+                          ├─ token expirado ....... 401
+                          ├─ assinatura inválida .. 403
+                          └─ válido → req.user = { id, role } → next()
+```
 
-## Sobre a Metodologia
+O middleware fica **entre o Router e o Controller**, como na seção 8.3 do material. A regra de negócio (bcrypt, `jwt.sign`, blacklist) fica no **Service**, e o Controller só trata `req`/`res`.
 
-Esta atividade aplica a **Aprendizagem Baseada em Problemas (PBL)**: ao invés de construir algo do zero seguindo um tutorial, você recebe um produto *aparentemente funcional* e precisa aplicar seu conhecimento para identificar o que está errado — e, mais importante, **por quê**.
+### Rotas
 
-O princípio central é:
+| Método | Rota | Acesso | Respostas |
+|---|---|---|---|
+| `POST` | `/usuarios/login` | Público | `200` usuário + `token` · `400` faltou email/senha · `401` credenciais inválidas |
+| `POST` | `/usuarios/logout` | Token válido | `200` token revogado |
+| `GET` | `/livros`, `/livros/:id`, `/livros/:id/resumo` | Token válido | |
+| `POST` | `/livros` | Token válido | |
+| `PUT` | `/livros/:id` | Token válido | |
+| `DELETE` | `/livros/:id` | Token válido | |
 
-> **"Você deve ser capaz de corrigir o seu próprio dever de casa."**
+O token vai no header `Authorization: Bearer <token>`.
 
-Na vida profissional, a habilidade mais valiosa não é acertar de primeira, mas sim **reconhecer erros no próprio trabalho e corrigi-los com embasamento técnico**. Quem apenas segue tutoriais aprende a reproduzir; quem é capaz de revisar criticamente aprende a *pensar*. Esta atividade treina exatamente essa competência: revisão crítica fundamentada.
+### Usuários de teste
 
----
+| Email | Senha | Role |
+|---|---|---|
+| `marco@example.com` | `123456` | admin |
+| `maria@example.com` | `123456` | user |
+| `joao@example.com` | `123456` | user |
 
-## Instruções
+### Decisões de segurança
 
-### Fase 1 — Preparação
-1. Leia com atenção os materiais obrigatórios.
-2. Clone este repositório:
-   ```bash
-   git clone https://github.com/elderbernardiifsul/ws-atividade-apiRestComProblemas.git
-   cd ws-atividade-apiRestComProblemas
-   ```
-3. Instale as dependências e inicie a API:
-   ```bash
-   npm install
-   node app.js
-   ```
-4. Confirme que a API inicia e que você consegue acessar as rotas.
-   API de Livros rodando em http://localhost:3000 deve aparecer como sinal de sucesso. Aliás, essa é a URL de endpoint da API, para onde você deve realizar as requisições.
+- **Senhas em hash bcrypt.** O `usuarioDAO` nunca guarda a senha em texto puro, e o login compara com `bcrypt.compare`.
+- **A senha nunca sai do Service.** A função `semSenha` cria uma cópia do usuário sem o campo `senha` antes de devolvê-lo. É uma cópia, e não um `delete`, para não apagar o hash guardado no DAO.
+- **Mensagem de erro genérica no login.** Email inexistente e senha errada respondem igual (`Credenciais inválidas`), para não revelar quais emails estão cadastrados.
+- **Payload mínimo.** O token carrega só `id` e `role`, nada sensível, já que o payload é apenas codificado em Base64URL.
+- **Algoritmo fixo.** O `jwt.verify` aceita só `HS256`, o que rejeita tokens com `alg: none`.
+- **Segredo fora do código.** O `JWT_SECRET` vem do `.env`, que está no `.gitignore`.
 
-### Fase 2 — Investigação e Correção
-1. Analise o código de **todos os arquivos** da API: `routes/`, `controllers/`, `services/`, `dao/`.
-2. A API contém **7 erros estruturais** distribuídos pelas camadas. Todos são erros de *design* e de *violação de princípios REST e/ou da arquitetura RCS*. Nenhum é erro de sintaxe — o código executa sem problemas.
-3. Os erros testam os seguintes tipos de conceito:
-   - Como recursos devem ser representados em URLs REST
-   - Qual o significado semântico dos verbos HTTP
-   - Quais status codes usar para cada operação
-   - Como os dados devem ser representados nas respostas
-   - Qual camada faz o quê na arquitetura RCS
-4. Para cada erro encontrado:
-   - Identifique **o que** está errado.
-   - Explique **por quê** está errado, citando o conceito do material de leitura.
-   - **Corrija** o código.
-5. Teste a API corrigida para confirmar que as rotas funcionam conforme os princípios REST e RCS.
+### Logout e blacklist
 
-### Fase 3 — Entrega via Formulário
-1. Acesse o **[formulário de entrega](https://forms.gle/gn4q98vUbkwnUDq48)**.
-2. Responda **todas** as questões com atenção.
+Por ser stateless, um JWT continua válido até expirar, mesmo depois do logout. Para resolver isso:
 
----
+1. `POST /usuarios/logout` passa pelo middleware (só um token válido pode ser revogado) e adiciona o token a um `Set` no `usuarioService`.
+2. O middleware consulta esse `Set` **antes** de verificar a assinatura. Um token revogado recebe `401 Token revogado`.
 
-## Dicas
-- Use ferramentas como **Postman**, **Insomnia**, **Thunder Client** (extensão do VS Code) ou **curl** para testar as rotas.
-- Compare o comportamento da API com as tabelas de rotas, métodos e status codes dos materiais.
-- Leia o Controller com a perspectiva do material: *"O Controller NUNCA acessa o array de dados diretamente. Ele sempre chama o Service."* 
-- Os erros estão em diferentes camadas e em diferentes aspectos: nomenclatura de rotas, métodos HTTP, status codes, representação de dados e separação de responsabilidades.
+**Limitações conhecidas** (aceitáveis no escopo acadêmico, segundo a seção 9.3 do material):
+- A blacklist fica em memória: é perdida quando o servidor reinicia e não é compartilhada entre instâncias. Em produção, seria Redis ou uma tabela no banco.
+- Os tokens expirados não são removidos do `Set`.
+- A `role` vai no token, mas nenhuma rota restringe o acesso por papel.
 
 ---
 
-## Critérios de Avaliação
+## Testando
 
-| Critério | Peso |
-|---|---|
-| Identificação correta dos 7 erros | 40% |
-| Justificativa com referência ao material (por que é um erro?) | 30% |
-| Correção proposta adequada e funcional | 20% |
-| Completude e clareza das respostas no formulário | 10% |
+```bash
+# 1. Sem token → 401
+curl -i http://localhost:3000/livros
+
+# 2. Login, copie o token da resposta
+curl -i -X POST http://localhost:3000/usuarios/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"marco@example.com","senha":"123456"}'
+
+TOKEN="cole_o_token_aqui"
+
+# 3. Com token → 200
+curl -i http://localhost:3000/livros -H "Authorization: Bearer $TOKEN"
+
+# 4. Logout → 200
+curl -i -X POST http://localhost:3000/usuarios/logout -H "Authorization: Bearer $TOKEN"
+
+# 5. Mesmo token depois do logout → 401 Token revogado
+curl -i http://localhost:3000/livros -H "Authorization: Bearer $TOKEN"
+```
+
+No Postman, use a aba Authorization → Bearer Token.
