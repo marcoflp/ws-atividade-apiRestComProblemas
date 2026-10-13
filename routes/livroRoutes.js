@@ -3,6 +3,9 @@
 const express = require("express");
 const router = express.Router();
 
+const { autenticar } = require("../middlewares/authMiddleware");
+router.use(autenticar);
+
 const livroController = require("../controllers/livroController");
 
 // =============================================
