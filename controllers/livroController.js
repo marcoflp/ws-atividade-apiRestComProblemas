@@ -1,6 +1,8 @@
 // controllers/livroController.js — Orquestração das requisições de Livros
 
 const livroService = require("../services/livroService");
+// ERRO 5: o controller importava o livroDAO e acessava os dados direto
+// CORREÇÃO: na arquitetura RCS o Controller NUNCA acessa o DAO, sempre chama o Service
 
 // =============================================
 // Listar todos os livros
@@ -22,6 +24,8 @@ function buscarPorId(req, res, next) {
     const id = parseInt(req.params.id);
     const livro = livroService.buscarPorId(id);
 
+    // ERRO 6: retornava status 200 com {} quando o livro não existia
+    // CORREÇÃO: recurso inexistente é 404 Not Found
     if (!livro) {
       return res.status(404).json({
         sucesso: false,
@@ -51,6 +55,8 @@ function criar(req, res, next) {
 
     const novoLivro = livroService.criar(dados);
 
+    // ERRO 7: retornava status 200 ao criar um livro
+    // CORREÇÃO: criação bem-sucedida é 201 Created
     return res.status(201).json(novoLivro);
   } catch (erro) {
     return next(erro);
@@ -62,6 +68,8 @@ function criar(req, res, next) {
 // =============================================
 function atualizar(req, res, next) {
   try {
+    // ERRO 3: o id era lido do body (req.body.id)
+    // CORREÇÃO: o id vem da URL (req.params.id)
     const id = parseInt(req.params.id);
     const dados = req.body;
 
@@ -85,6 +93,8 @@ function atualizar(req, res, next) {
 // =============================================
 function remover(req, res, next) {
   try {
+    // ERRO 4 e 5: chamava livroDAO.limparTudo() direto e apagava tudo
+    // CORREÇÃO: remove só o livro do id, passando pelo Service, e responde 204 No Content
     const id = parseInt(req.params.id);
     const removido = livroService.remover(id);
 
@@ -116,6 +126,8 @@ function buscarResumo(req, res, next) {
       });
     }
 
+    // ERRO EXTRA: o resumo era enviado como texto plano ("titulo: X, autor: Y...")
+    // CORREÇÃO: dados da API são representados em JSON
     return res.status(200).json({
       titulo: livro.titulo,
       autor: livro.autor,
